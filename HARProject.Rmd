@@ -1,0 +1,130 @@
+---
+title: "Human Activity Recognition Project"
+author: "Yann Claudel"
+date: "22 dec 2016"
+output:
+  pdf_document: default
+  html_document:
+    fig_height: 10
+    fig_width: 10
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Synopsis
+The purpose of this analysis is to predict the manner in which people did weight lifting exercises, meaning quantify how well they do it.   
+The model is built with data from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants.
+
+> Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+These information come from the website: [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har)
+
+
+### Loading and preprocessing the data
+
+Training data:
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+Testing data:
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+Data come from the website: [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har)
+
+```{r message=FALSE, warning=FALSE}
+library(randomForest)
+library(caret)
+library(ggplot2)
+library(corrplot)
+```
+Load data 
+```{r}
+train = read.csv("pml-training.csv", header = TRUE,na.strings=c("", "NA", "NULL"))
+test = read.csv("pml-testing.csv", header = TRUE, na.strings=c("", "NA", "NULL"))
+```
+
+Remove unused columns
+```{r}
+train <- subset(train, select =-c(X,user_name,raw_timestamp_part_1,raw_timestamp_part_2,cvtd_timestamp,new_window,num_window))
+test <- subset(test, select =-c(X,user_name,raw_timestamp_part_1,raw_timestamp_part_2,cvtd_timestamp,new_window,num_window))
+
+```
+
+Remove variables that have more than 50% of NA in the train data
+```{r}
+percentNA <- colSums(is.na(train))/19622
+train<- train[,percentNA < 0.5]
+test<- test[,percentNA < 0.5]
+```
+
+
+Split train data in order to do cross validation of the model
+```{r}
+inTrain <- createDataPartition(y=train$classe,p=0.7, list=FALSE)
+trainModel <- train[inTrain,]
+testModel <- train[-inTrain,]
+```
+
+### Exploratory data analyses - Correlation matrix
+
+```{r}
+M <- cor(subset(trainModel, select =-c(classe)))
+corrplot(M, type="upper")
+```
+
+### Plot variable
+
+I have plot several variables in order to see a pattern (for instance magnet_dumbbell_z hereafter)
+I would say that it's difficult to see a pattern in all these graphs.
+But a cycle A-B-C-D-E-A-B-.. seems to be present.
+
+```{r}
+g <- ggplot(train, aes(x=magnet_dumbbell_z, fill=classe)) +  geom_histogram(binwidth=40, alpha=.5, position="dodge")
+g
+```
+
+#### The problem is not linear so I select the Ramdow Forest Model.
+
+### Build the model with randow forest
+```{r}
+set.seed(12345)
+mod_rf <- randomForest(subset(trainModel, select =-c(classe)), trainModel$classe, ntree=100, importance=TRUE)
+
+```
+
+### Build a model
+```{r}
+
+imp <- importance(mod_rf, type=1)
+featureImportance <- data.frame(Feature=row.names(imp), Importance=imp[,1])
+
+ggplot(featureImportance, aes(x=reorder(Feature, Importance), y=Importance)) +
+     geom_bar(stat="identity", fill="#53cfff") +
+     coord_flip() + 
+     theme_light(base_size=10) +
+     xlab("") +
+     ylab("Importance") + 
+     ggtitle("Random Forest Feature Importance\n") +
+     theme(plot.title=element_text(size=10))
+```
+
+### Cross validation
+```{r}
+pred_rf <- predict(mod_rf, subset(testModel, select =-c(classe)),type="class")
+confMat <- confusionMatrix(pred_rf, testModel$classe)
+confMat$overall[1]
+confMat
+```
+
+
+### Prediction
+```{r}
+pred_rf <- predict(mod_rf, subset(test, select =-c(problem_id)))
+pred_rf
+```
+
+> HAPPY DATA MINING 2017
+
+
+
